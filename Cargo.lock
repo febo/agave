@@ -6579,7 +6579,7 @@ dependencies = [
  "bytemuck",
  "bytemuck_derive",
  "curve25519-dalek 4.1.3",
- "solana-program",
+ "solana-define-syscall",
  "thiserror",
 ]
 
@@ -7465,6 +7465,7 @@ dependencies = [
  "solana-borsh",
  "solana-clock",
  "solana-cpi",
+ "solana-curve25519",
  "solana-decode-error",
  "solana-define-syscall",
  "solana-epoch-schedule",

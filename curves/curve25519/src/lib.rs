@@ -6,3 +6,5 @@ pub mod edwards;
 pub mod errors;
 pub mod ristretto;
 pub mod scalar;
+#[cfg(target_os = "solana")]
+pub mod syscalls;
