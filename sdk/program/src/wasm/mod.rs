@@ -3,8 +3,9 @@
 use wasm_bindgen::prelude::*;
 
 pub mod instructions;
-#[deprecated(since = "2.2.0", note = "Use `solana_system_interface` crate instead")]
-pub use solana_system_interface::wasm as system_instruction;
+// This module is intentionally left empty. The wasm system instruction impl can be
+// found in the `solana-system-interface` crate.
+pub mod system_instruction {}
 
 /// Initialize Javascript logging and panic handler
 #[wasm_bindgen]
