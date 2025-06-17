@@ -6610,6 +6610,16 @@ impl Bank {
             // AccountHash for modified accounts, and can stop the background account hasher.
             self.rc.accounts.accounts_db.stop_background_hasher();
         }
+
+        if new_feature_activations
+            .contains(&agave_feature_set::migrate_ptoken_to_spl_token_program::id())
+        {
+            self.upgrade_core_bpf_program(
+                &agave_feature_set::migrate_ptoken_to_spl_token_program::SPL_TOLKEN_PROGRAM_ID,
+                &agave_feature_set::migrate_ptoken_to_spl_token_program::PTOKEN_PROGRAM_BUFFER,
+                "migrate_ptoken_to_spl_token_program",
+            );
+        }
     }
 
     fn adjust_sysvar_balance_for_rent(&self, account: &mut AccountSharedData) {
