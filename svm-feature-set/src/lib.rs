@@ -36,7 +36,7 @@ pub struct SVMFeatureSet {
     pub disable_zk_elgamal_proof_program: bool,
     pub reenable_zk_elgamal_proof_program: bool,
     pub raise_cpi_nesting_limit_to_8: bool,
-    pub migrate_ptoken_to_spl_token_program: bool,
+    pub replace_spl_token_with_p_token: bool,
 }
 
 impl SVMFeatureSet {
@@ -78,7 +78,7 @@ impl SVMFeatureSet {
             disable_zk_elgamal_proof_program: true,
             reenable_zk_elgamal_proof_program: true,
             raise_cpi_nesting_limit_to_8: true,
-            migrate_ptoken_to_spl_token_program: true,
+            replace_spl_token_with_p_token: true,
         }
     }
 }
