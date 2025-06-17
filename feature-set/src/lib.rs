@@ -156,8 +156,7 @@ impl FeatureSet {
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
             raise_cpi_nesting_limit_to_8: self.is_active(&raise_cpi_nesting_limit_to_8::id()),
-            migrate_ptoken_to_spl_token_program: self
-                .is_active(&migrate_ptoken_to_spl_token_program::id()),
+            replace_spl_token_with_p_token: self.is_active(&replace_spl_token_with_p_token::id()),
         }
     }
 }
@@ -1128,12 +1127,20 @@ pub mod enforce_fixed_fec_set {
     solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
 }
 
-pub mod migrate_ptoken_to_spl_token_program {
+pub mod enforce_fixed_fec_set {
+    solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
+}
+
+pub mod raise_block_limits_to_100m {
+    solana_pubkey::declare_id!("P1BCUMpAC7V2GRBRiJCNUgpMyWZhoqt3LKo712ePqsz");
+}
+
+pub mod replace_spl_token_with_p_token {
     use solana_pubkey::Pubkey;
 
     solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
 
-    pub const SPL_TOLKEN_PROGRAM_ID: Pubkey =
+    pub const SPL_TOKEN_PROGRAM_ID: Pubkey =
         Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
     pub const PTOKEN_PROGRAM_BUFFER: Pubkey =
@@ -1382,7 +1389,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (raise_account_cu_limit::id(), "SIMD-0306: Raise account CU limit to 40% max"),
         (raise_cpi_nesting_limit_to_8::id(), "SIMD-0296: Raise CPI nesting limit from 4 to 8"),
         (enforce_fixed_fec_set::id(), "SIMD-0317: Enforce 32 data + 32 coding shreds"),
-        (migrate_ptoken_to_spl_token_program::id(), "SIMD-0266: Efficient Token program"),
+        (replace_spl_token_with_p_token::id(), "SIMD-0266: Efficient Token program"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
