@@ -156,8 +156,7 @@ impl FeatureSet {
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
             raise_cpi_nesting_limit_to_8: self.is_active(&raise_cpi_nesting_limit_to_8::id()),
-            migrate_ptoken_to_spl_token_program: self
-                .is_active(&migrate_ptoken_to_spl_token_program::id()),
+            replace_spl_token_with_p_token: self.is_active(&replace_spl_token_with_p_token::id()),
         }
     }
 }
@@ -1128,12 +1127,12 @@ pub mod enforce_fixed_fec_set {
     solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
 }
 
-pub mod migrate_ptoken_to_spl_token_program {
+pub mod replace_spl_token_with_p_token {
     use solana_pubkey::Pubkey;
 
     solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
 
-    pub const SPL_TOLKEN_PROGRAM_ID: Pubkey =
+    pub const SPL_TOKEN_PROGRAM_ID: Pubkey =
         Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
     pub const PTOKEN_PROGRAM_BUFFER: Pubkey =
