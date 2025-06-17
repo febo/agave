@@ -159,6 +159,8 @@ impl FeatureSet {
                 .is_active(&disable_zk_elgamal_proof_program::id()),
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
+            migrate_ptoken_to_spl_token_program: self
+                .is_active(&migrate_ptoken_to_spl_token_program::id()),
         }
     }
 }
@@ -1117,6 +1119,18 @@ pub mod reenable_zk_elgamal_proof_program {
     solana_pubkey::declare_id!("zkemPXcuM3G4wpMDZ36Cpw34EjUpvm1nuioiSGbGZPR");
 }
 
+pub mod migrate_ptoken_to_spl_token_program {
+    use solana_pubkey::Pubkey;
+
+    solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
+
+    pub const SPL_TOLKEN_PROGRAM_ID: Pubkey =
+        Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+    pub const PTOKEN_PROGRAM_BUFFER: Pubkey =
+        Pubkey::from_str_const("ptokNfvuU7terQ2r2452RzVXB3o4GT33yPWo1fUkkZ2");
+}
+
 pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::new(|| {
     [
         (secp256k1_program_enabled::id(), "secp256k1 program"),
@@ -1356,6 +1370,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (alpenglow::id(), "Enable Alpenglow"),
         (disable_zk_elgamal_proof_program::id(), "Disables zk-elgamal-proof program"),
         (reenable_zk_elgamal_proof_program::id(), "Re-enables zk-elgamal-proof program"),
+        (migrate_ptoken_to_spl_token_program::id(), "SIMD-0266: Efficient Token program"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
