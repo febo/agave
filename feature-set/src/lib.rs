@@ -156,6 +156,8 @@ impl FeatureSet {
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
             raise_cpi_nesting_limit_to_8: self.is_active(&raise_cpi_nesting_limit_to_8::id()),
+            migrate_ptoken_to_spl_token_program: self
+                .is_active(&migrate_ptoken_to_spl_token_program::id()),
         }
     }
 }
@@ -1126,6 +1128,18 @@ pub mod enforce_fixed_fec_set {
     solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
 }
 
+pub mod migrate_ptoken_to_spl_token_program {
+    use solana_pubkey::Pubkey;
+
+    solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
+
+    pub const SPL_TOLKEN_PROGRAM_ID: Pubkey =
+        Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+    pub const PTOKEN_PROGRAM_BUFFER: Pubkey =
+        Pubkey::from_str_const("ptokNfvuU7terQ2r2452RzVXB3o4GT33yPWo1fUkkZ2");
+}
+
 pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::new(|| {
     [
         (secp256k1_program_enabled::id(), "secp256k1 program"),
@@ -1368,6 +1382,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (raise_account_cu_limit::id(), "SIMD-0306: Raise account CU limit to 40% max"),
         (raise_cpi_nesting_limit_to_8::id(), "SIMD-0296: Raise CPI nesting limit from 4 to 8"),
         (enforce_fixed_fec_set::id(), "SIMD-0317: Enforce 32 data + 32 coding shreds"),
+        (migrate_ptoken_to_spl_token_program::id(), "SIMD-0266: Efficient Token program"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
