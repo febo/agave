@@ -6618,7 +6618,8 @@ impl Bank {
                 &agave_feature_set::migrate_ptoken_to_spl_token_program::SPL_TOLKEN_PROGRAM_ID,
                 &agave_feature_set::migrate_ptoken_to_spl_token_program::PTOKEN_PROGRAM_BUFFER,
                 "migrate_ptoken_to_spl_token_program",
-            );
+            )
+            .unwrap();
         }
     }
 
