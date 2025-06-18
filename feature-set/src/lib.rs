@@ -1118,7 +1118,7 @@ pub mod reenable_zk_elgamal_proof_program {
     solana_pubkey::declare_id!("zkemPXcuM3G4wpMDZ36Cpw34EjUpvm1nuioiSGbGZPR");
 }
 
-pub mod migrate_ptoken_to_spl_token_program {
+pub mod replace_spl_token_with_p_token {
     use solana_pubkey::Pubkey;
 
     solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
