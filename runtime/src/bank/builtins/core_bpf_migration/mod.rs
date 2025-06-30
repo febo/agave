@@ -1,10 +1,17 @@
 pub(crate) mod error;
 mod source_buffer;
+mod source_buffer_v4;
+mod target_bpf_v2;
 mod target_builtin;
 mod target_core_bpf;
 
 use {
-    crate::bank::Bank,
+    crate::bank::{
+        builtins::core_bpf_migration::{
+            source_buffer_v4::SourceBufferV4, target_bpf_v2::TargetBpfV2,
+        },
+        Bank,
+    },
     error::CoreBpfMigrationError,
     num_traits::{CheckedAdd, CheckedSub},
     solana_account::{AccountSharedData, ReadableAccount, WritableAccount},
@@ -12,13 +19,14 @@ use {
     solana_hash::Hash,
     solana_instruction::error::InstructionError,
     solana_loader_v3_interface::state::UpgradeableLoaderState,
+    solana_loader_v4_interface::state::{LoaderV4State, LoaderV4Status},
     solana_program_runtime::{
         invoke_context::{EnvironmentConfig, InvokeContext},
         loaded_programs::ProgramCacheForTxBatch,
         sysvar_cache::SysvarCache,
     },
     solana_pubkey::Pubkey,
-    solana_sdk_ids::bpf_loader_upgradeable,
+    solana_sdk_ids::{bpf_loader_upgradeable, loader_v4},
     solana_svm_callback::InvokeContextCallback,
     solana_transaction_context::TransactionContext,
     source_buffer::SourceBuffer,
@@ -52,6 +60,38 @@ impl Bank {
             self.get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program());
         let mut account =
             AccountSharedData::new_data(lamports, &state, &bpf_loader_upgradeable::id())?;
+        account.set_executable(true);
+        Ok(account)
+    }
+
+    /// Create an `AccountSharedData` with data initialized to
+    /// `LoaderV4Status::Deployed` populated with the target's new data.
+    fn new_target_loader_v4_program_account(
+        &self,
+        authority_adress: Pubkey,
+        buffer: &SourceBufferV4,
+        slot: u64,
+    ) -> Result<AccountSharedData, CoreBpfMigrationError> {
+        let mut metadata = [0u8; LoaderV4State::program_data_offset()];
+        let state = unsafe {
+            std::mem::transmute::<&mut [u8; LoaderV4State::program_data_offset()], &mut LoaderV4State>(
+                &mut metadata,
+            )
+        };
+        *state = LoaderV4State {
+            slot,
+            authority_address_or_next_version: authority_adress,
+            status: LoaderV4Status::Deployed,
+        };
+
+        let mut data = Vec::with_capacity(buffer.buffer_account.data().len());
+        data.extend_from_slice(&metadata);
+        data.extend_from_slice(
+            &buffer.buffer_account.data()[LoaderV4State::program_data_offset()..],
+        );
+
+        let lamports = self.get_minimum_balance_for_rent_exemption(data.len());
+        let mut account = AccountSharedData::new_data(lamports, &data, &loader_v4::id())?;
         account.set_executable(true);
         Ok(account)
     }
@@ -196,6 +236,81 @@ impl Bank {
                 self.slot,
             )?;
             load_program_metrics.submit_datapoint(&mut dummy_invoke_context.timings);
+        }
+
+        // Update the program cache by merging with `programs_modified`, which
+        // should have been updated by the deploy function.
+        self.transaction_processor
+            .program_cache
+            .write()
+            .unwrap()
+            .merge(&program_cache_for_tx_batch.drain_modified_entries());
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn directly_invoke_loader_v4_deploy(
+        &self,
+        program_id: &Pubkey,
+        program_data: &[u8],
+    ) -> Result<(), InstructionError> {
+        let data_len = program_data.len();
+        let program_metadata_size = LoaderV4State::program_data_offset();
+        let elf = &program_data[program_metadata_size..];
+        // Set up the two `LoadedProgramsForTxBatch` instances, as if
+        // processing a new transaction batch.
+        let mut program_cache_for_tx_batch = ProgramCacheForTxBatch::new_from_cache(
+            self.slot,
+            self.epoch,
+            &self.transaction_processor.program_cache.read().unwrap(),
+        );
+
+        // Configure a dummy `InvokeContext` from the runtime's current
+        // environment, as well as the two `ProgramCacheForTxBatch`
+        // instances configured above, then invoke the loader.
+        {
+            let compute_budget = self.compute_budget().unwrap_or_default();
+            let mut sysvar_cache = SysvarCache::default();
+            sysvar_cache.fill_missing_entries(|pubkey, set_sysvar| {
+                if let Some(account) = self.get_account(pubkey) {
+                    set_sysvar(account.data());
+                }
+            });
+
+            let mut dummy_transaction_context = TransactionContext::new(
+                vec![],
+                self.rent_collector.rent.clone(),
+                compute_budget.max_instruction_stack_depth,
+                compute_budget.max_instruction_trace_length,
+            );
+
+            struct MockCallback {}
+            impl InvokeContextCallback for MockCallback {}
+            let feature_set = self.feature_set.runtime_features();
+            let mut dummy_invoke_context = InvokeContext::new(
+                &mut dummy_transaction_context,
+                &mut program_cache_for_tx_batch,
+                EnvironmentConfig::new(
+                    Hash::default(),
+                    0,
+                    &MockCallback {},
+                    &feature_set,
+                    &sysvar_cache,
+                ),
+                None,
+                compute_budget.to_budget(),
+                compute_budget.to_cost(),
+            );
+
+            solana_bpf_loader_program::deploy_program!(
+                dummy_invoke_context,
+                program_id,
+                &solana_sdk_ids::loader_v4::id(),
+                data_len,
+                elf,
+                self.slot,
+            );
         }
 
         // Update the program cache by merging with `programs_modified`, which
@@ -356,6 +471,72 @@ impl Bank {
             &target.program_data_address,
             &new_target_program_data_account,
         );
+        self.store_account(&source.buffer_address, &AccountSharedData::default());
+
+        // Update the account data size delta.
+        self.calculate_and_update_accounts_data_size_delta_off_chain(old_data_size, new_data_size);
+
+        Ok(())
+    }
+
+    /// Upgrade a Loader v2 BPF program to Loader v4.
+    ///
+    /// To use this function, add a feature-gated callsite to bank's
+    /// `apply_feature_activations` function, similar to below.
+    ///
+    /// ```ignore
+    /// if new_feature_activations.contains(&agave_feature_set::test_upgrade_program::id()) {
+    ///     self.upgrade_loader_v2_program_to_loader_v4(
+    ///        &loader_v2_bpf_program_address,
+    ///        &source_buffer_v4_address,
+    ///        "test_upgrade_loader_v2_bpf_program",
+    ///     );
+    /// }
+    /// ```
+    /// The `loader_v4_source_buffer_address` must point to a Loader v4 buffer account
+    /// (status equat to [`LoaderV4Status::Retracted`]).
+    #[allow(dead_code)] // Only used when an upgrade is configured.
+    pub(crate) fn upgrade_loader_v2_program_to_loader_v4(
+        &mut self,
+        loader_v2_bpf_program_address: &Pubkey,
+        loader_v4_source_buffer_address: &Pubkey,
+        datapoint_name: &'static str,
+    ) -> Result<(), CoreBpfMigrationError> {
+        datapoint_info!(datapoint_name, ("slot", self.slot, i64));
+
+        let target = TargetBpfV2::new_checked(self, loader_v2_bpf_program_address)?;
+        let source = SourceBufferV4::new_checked(self, loader_v4_source_buffer_address)?;
+
+        // Attempt serialization first before modifying the bank.
+        //
+        // Since Loader v2 programs do not have an upgrade authority, the program address
+        // is set as the authority address for the new Loader v4 program account.
+        let new_target_program_account =
+            self.new_target_loader_v4_program_account(target.program_address, &source, self.slot)?;
+
+        // Gather old and new account data sizes, for updating the bank's
+        // accounts data size delta off-chain.
+        let old_data_size = target.program_account.data().len();
+        let new_data_size = new_target_program_account.data().len();
+
+        // Deploy the new target Loader v4 BPF program.
+        // This step will validate the program ELF against the current runtime
+        // environment, as well as update the program cache.
+        self.directly_invoke_loader_v4_deploy(
+            &target.program_address,
+            new_target_program_account.data(),
+        )?;
+
+        // Calculate the lamports to burn.
+        //
+        // The source buffer account will be cleared, so burn its lamports.
+        // The new program account might need to be funded.
+        let lamports_to_burn = source.buffer_account.lamports();
+        let lamports_to_fund = new_target_program_account.lamports();
+        self.update_captalization(lamports_to_burn, lamports_to_fund)?;
+
+        // Store the new program data account and clear the source buffer account.
+        self.store_account(&target.program_address, &new_target_program_account);
         self.store_account(&source.buffer_address, &AccountSharedData::default());
 
         // Update the account data size delta.
