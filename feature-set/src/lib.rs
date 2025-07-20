@@ -156,7 +156,6 @@ impl FeatureSet {
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
             raise_cpi_nesting_limit_to_8: self.is_active(&raise_cpi_nesting_limit_to_8::id()),
-            replace_spl_token_with_p_token: self.is_active(&replace_spl_token_with_p_token::id()),
         }
     }
 }
@@ -1125,12 +1124,8 @@ pub mod raise_cpi_nesting_limit_to_8 {
     solana_pubkey::declare_id!("6TkHkRmP7JZy1fdM6fg5uXn76wChQBWGokHBJzrLB3mj");
 }
 
-pub mod raise_block_limits_to_100m {
-    solana_pubkey::declare_id!("P1BCUMpAC7V2GRBRiJCNUgpMyWZhoqt3LKo712ePqsz");
-}
-
 pub mod replace_spl_token_with_p_token {
-    use solana_pubkey::Pubkey;
+    use super::Pubkey;
 
     solana_pubkey::declare_id!("ptokSWRqZz5u2xdqMdstkMKpFurauUpVen7TZXgDpkQ");
 
