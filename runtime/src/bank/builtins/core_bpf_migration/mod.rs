@@ -1,10 +1,11 @@
 pub(crate) mod error;
 mod source_buffer;
+mod target_bpf_v2;
 mod target_builtin;
 mod target_core_bpf;
 
 use {
-    crate::bank::Bank,
+    crate::bank::{builtins::core_bpf_migration::target_bpf_v2::TargetBpfV2, Bank},
     error::CoreBpfMigrationError,
     num_traits::{CheckedAdd, CheckedSub},
     solana_account::{AccountSharedData, ReadableAccount, WritableAccount},
@@ -37,16 +38,22 @@ fn checked_sub<T: CheckedSub>(a: T, b: T) -> Result<T, CoreBpfMigrationError> {
         .ok_or(CoreBpfMigrationError::ArithmeticOverflow)
 }
 
+/// A trait for the target program account being migrated.
+pub(crate) trait Target {
+    /// The target program data address.
+    fn program_data_address(&self) -> &Pubkey;
+}
+
 impl Bank {
     /// Create an `AccountSharedData` with data initialized to
     /// `UpgradeableLoaderState::Program` populated with the target's new data
     /// account address.
     fn new_target_program_account(
         &self,
-        target: &TargetBuiltin,
+        target: &dyn Target,
     ) -> Result<AccountSharedData, CoreBpfMigrationError> {
         let state = UpgradeableLoaderState::Program {
-            programdata_address: target.program_data_address,
+            programdata_address: *target.program_data_address(),
         };
         let lamports =
             self.get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program());
@@ -352,6 +359,91 @@ impl Bank {
         self.update_captalization(lamports_to_burn, lamports_to_fund)?;
 
         // Store the new program data account and clear the source buffer account.
+        self.store_account(
+            &target.program_data_address,
+            &new_target_program_data_account,
+        );
+        self.store_account(&source.buffer_address, &AccountSharedData::default());
+
+        // Update the account data size delta.
+        self.calculate_and_update_accounts_data_size_delta_off_chain(old_data_size, new_data_size);
+
+        Ok(())
+    }
+
+    /// Migrate a Loader v2 BPF program.
+    ///
+    /// To use this function, add a feature-gated callsite to bank's
+    /// `apply_feature_activations` function, similar to below.
+    ///
+    /// ```ignore
+    /// if new_feature_activations.contains(&agave_feature_set::test_upgrade_program::id()) {
+    ///     self.migrate_bpf_loader_v2_to_v3(
+    ///        &bpf_loader_v2_program_address,
+    ///        &source_buffer_address,
+    ///        "test_upgrade_loader_v2_bpf_program",
+    ///     );
+    /// }
+    /// ```
+    /// The `source_buffer_address` must point to a Loader v3 buffer account
+    /// (state equal to [`UpgradeableLoaderState::Buffer`]).
+    #[allow(dead_code)] // Only used when an upgrade is configured.
+    pub(crate) fn migrate_bpf_loader_v2_to_v3(
+        &mut self,
+        loader_v2_bpf_program_address: &Pubkey,
+        source_buffer_address: &Pubkey,
+        datapoint_name: &'static str,
+    ) -> Result<(), CoreBpfMigrationError> {
+        datapoint_info!(datapoint_name, ("slot", self.slot, i64));
+
+        let target = TargetBpfV2::new_checked(self, loader_v2_bpf_program_address)?;
+        let source = SourceBuffer::new_checked(self, source_buffer_address)?;
+
+        // Attempt serialization first before modifying the bank.
+        let new_target_program_account = self.new_target_program_account(&target)?;
+        // Loader v2 programs do not have an upgrade authority, so pass `None` when
+        // creating the new program data account.
+        let new_target_program_data_account =
+            self.new_target_program_data_account(&source, None)?;
+
+        // Gather old and new account data sizes, for updating the bank's
+        // accounts data size delta off-chain.
+        // The old data size is the total size of all original accounts
+        // involved.
+        // The new data size is the total size of all the new program accounts.
+        let old_data_size = checked_add(
+            target.program_account.data().len(),
+            source.buffer_account.data().len(),
+        )?;
+        let new_data_size = checked_add(
+            new_target_program_account.data().len(),
+            new_target_program_data_account.data().len(),
+        )?;
+
+        // Deploy the new Loader v3 program.
+        // This step will validate the program ELF against the current runtime
+        // environment, as well as update the program cache.
+        self.directly_invoke_loader_v3_deploy(
+            &target.program_address,
+            new_target_program_data_account.data(),
+        )?;
+
+        // Calculate the lamports to burn.
+        // The target program account will be replaced, so burn its lamports.
+        // The source buffer account will be cleared, so burn its lamports.
+        // The two new program accounts will need to be funded.
+        let lamports_to_burn = checked_add(
+            target.program_account.lamports(),
+            source.buffer_account.lamports(),
+        )?;
+        let lamports_to_fund = checked_add(
+            new_target_program_account.lamports(),
+            new_target_program_data_account.lamports(),
+        )?;
+        self.update_captalization(lamports_to_burn, lamports_to_fund)?;
+
+        // Store the new program accounts and clear the source buffer account.
+        self.store_account(&target.program_address, &new_target_program_account);
         self.store_account(
             &target.program_data_address,
             &new_target_program_data_account,
