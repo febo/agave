@@ -1730,7 +1730,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_migrate_bpf_loader_v2_to_v3() {
+    fn test_upgrade_loader_v2_program_with_loader_v3_program() {
         let mut bank = create_simple_test_bank(0);
 
         let bpf_loader_v2_program_address = Pubkey::new_unique();
@@ -1778,10 +1778,10 @@ pub(crate) mod tests {
 
         // Perform the upgrade.
         let upgrade_slot = bank.slot();
-        bank.migrate_bpf_loader_v2_to_v3(
+        bank.upgrade_loader_v2_program_with_loader_v3_program(
             &bpf_loader_v2_program_address,
             &source_buffer_address,
-            "test_migrate_bpf_loader_v2_to_v3",
+            "test_upgrade_loader_v2_program_with_loader_v3_program",
         )
         .unwrap();
 
@@ -1806,7 +1806,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_migrate_bpf_loader_v2_to_v3_fail_invalid_buffer() {
+    fn test_upgrade_loader_v2_program_with_loader_v3_program_fail_invalid_buffer() {
         let mut bank = create_simple_test_bank(0);
 
         let bpf_loader_v2_program_address = Pubkey::new_unique();
@@ -1858,10 +1858,10 @@ pub(crate) mod tests {
 
         // Try to perform the upgrade.
         assert_matches!(
-            bank.migrate_bpf_loader_v2_to_v3(
+            bank.upgrade_loader_v2_program_with_loader_v3_program(
                 &bpf_loader_v2_program_address,
                 &source_buffer_address,
-                "test_migrate_bpf_loader_v2_to_v3",
+                "test_upgrade_loader_v2_program_with_loader_v3_program",
             )
             .unwrap_err(),
             CoreBpfMigrationError::InvalidBufferAccount(_)
