@@ -157,7 +157,6 @@ impl FeatureSet {
                 .is_active(&disable_zk_elgamal_proof_program::id()),
             reenable_zk_elgamal_proof_program: self
                 .is_active(&reenable_zk_elgamal_proof_program::id()),
-            replace_spl_token_with_p_token: self.is_active(&replace_spl_token_with_p_token::id()),
         }
     }
 }
@@ -1116,10 +1115,6 @@ pub mod raise_block_limits_to_100m {
     solana_pubkey::declare_id!("P1BCUMpAC7V2GRBRiJCNUgpMyWZhoqt3LKo712ePqsz");
 }
 
-pub mod raise_block_limits_to_100m {
-    solana_pubkey::declare_id!("P1BCUMpAC7V2GRBRiJCNUgpMyWZhoqt3LKo712ePqsz");
-}
-
 pub mod replace_spl_token_with_p_token {
     use solana_pubkey::Pubkey;
 
@@ -1370,7 +1365,6 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (alpenglow::id(), "Enable Alpenglow"),
         (disable_zk_elgamal_proof_program::id(), "Disables zk-elgamal-proof program"),
         (reenable_zk_elgamal_proof_program::id(), "Re-enables zk-elgamal-proof program"),
-        (raise_block_limits_to_100m::id(), "SIMD-0286: Raise block limit to 100M"),
         (replace_spl_token_with_p_token::id(), "SIMD-0266: Efficient Token program"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
