@@ -197,6 +197,7 @@ struct VerifyAccountsHashConfig {
 mod accounts_lt_hash;
 mod address_lookup_table;
 pub mod bank_hash_details;
+mod bpf_program_upgrade_tests;
 mod builtin_programs;
 pub mod builtins;
 mod check_transactions;
