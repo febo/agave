@@ -329,7 +329,7 @@ impl Bank {
                 programdata.len(),
                 &mut metrics,
             )
-            .map_err(|_err| InstructionError::AccountAlreadyInitialized)?;
+            .map_err(|_err| InstructionError::ProgramEnvironmentSetupFailure)?;
 
             program_cache_for_tx_batch.store_modified_entry(*program_id, Arc::new(updated));
         }
