@@ -227,7 +227,7 @@ mod tests_core_bpf_migration {
 
         // Run the post-migration program checks.
         assert!(bank.feature_set.is_active(feature_id));
-        test_context.run_program_checks(&bank, migration_slot);
+        test_context.run_program_checks(&bank, migration_slot, &bpf_loader_upgradeable::id());
 
         // Advance one slot so that the new BPF builtin program becomes
         // effective in the program cache.
@@ -274,7 +274,7 @@ mod tests_core_bpf_migration {
 
         // Run the post-migration program checks again.
         assert!(bank.feature_set.is_active(feature_id));
-        test_context.run_program_checks(&bank, migration_slot);
+        test_context.run_program_checks(&bank, migration_slot, &bpf_loader_upgradeable::id());
 
         // Again, successfully invoke the new BPF builtin program.
         bank.process_transaction(&Transaction::new(

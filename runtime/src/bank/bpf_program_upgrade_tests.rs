@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests_upgrade_loader_v2_program_with_loader_v3_program {
+mod tests_upgrade_loader_v2_owned_program {
     use {
         crate::bank::{
             builtins::core_bpf_migration::tests::TestContext,
@@ -63,7 +63,7 @@ mod tests_upgrade_loader_v2_program_with_loader_v3_program {
         agave_feature_set::replace_spl_token_with_p_token::PTOKEN_PROGRAM_BUFFER;
         "p-token"
     )]
-    fn test_upgrade_loader_v2_program_with_loader_v3_program(
+    fn test_upgrade_loader_v2_owned_program(
         feature_id: Pubkey,
         program_id: Pubkey,
         source_buffer_address: Pubkey,
@@ -141,7 +141,7 @@ mod tests_upgrade_loader_v2_program_with_loader_v3_program {
 
         // Run the post-migration program checks.
         assert!(bank.feature_set.is_active(&feature_id));
-        test_context.run_program_checks(&bank, migration_slot);
+        test_context.run_program_checks(&bank, migration_slot, &bpf_loader::id());
 
         // Advance one slot so that the new BPF loader v3 program becomes
         // effective in the program cache.
@@ -188,7 +188,7 @@ mod tests_upgrade_loader_v2_program_with_loader_v3_program {
 
         // Run the post-migration program checks again.
         assert!(bank.feature_set.is_active(&feature_id));
-        test_context.run_program_checks(&bank, migration_slot);
+        test_context.run_program_checks(&bank, migration_slot, &bpf_loader::id());
 
         // Again, successfully invoke the new BPF loader v3 program.
         bank.process_transaction(&Transaction::new(
