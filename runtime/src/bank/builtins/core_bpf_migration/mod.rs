@@ -48,10 +48,10 @@ impl Bank {
     /// account address.
     fn new_target_program_account(
         &self,
-        program_data_address: &Pubkey,
+        target: &TargetBuiltin,
     ) -> Result<AccountSharedData, CoreBpfMigrationError> {
         let state = UpgradeableLoaderState::Program {
-            programdata_address: *program_data_address,
+            programdata_address: target.program_data_address,
         };
         let lamports =
             self.get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program());
@@ -316,20 +316,6 @@ impl Bank {
                     InstructionError::ProgramEnvironmentSetupFailure
                 })?;
 
-            /*
-            let current = dummy_invoke_context
-                .program_cache_for_tx_batch
-                .find(program_id)
-                .ok_or(InstructionError::IncorrectProgramId)?;
-
-            // Sanity check: make sure we got the correct account owner
-            let program_owner = if current.account_owner == ProgramCacheEntryOwner::LoaderV2 {
-                current.account_owner()
-            } else {
-                return Err(InstructionError::InvalidAccountOwner);
-            };
-            */
-
             // We need to pass one instance of `LoadProgramMetrics` to create a new
             // cache entry.
             let mut metrics = LoadProgramMetrics::default();
@@ -379,8 +365,7 @@ impl Bank {
         };
 
         // Attempt serialization first before modifying the bank.
-        let new_target_program_account =
-            self.new_target_program_account(&target.program_data_address)?;
+        let new_target_program_account = self.new_target_program_account(&target)?;
         let new_target_program_data_account =
             self.new_target_program_data_account(&source, config.upgrade_authority_address)?;
 
