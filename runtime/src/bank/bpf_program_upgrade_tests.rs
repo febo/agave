@@ -221,7 +221,7 @@ mod tests_upgrade_loader_v2_owned_program {
     // Here we want to see that the bank handles the failure gracefully and
     // advances to the next epoch without issue.
     #[test]
-    fn test_core_bpf_migration_failure() {
+    fn test_upgrade_loader_v2_owned_program_failure() {
         let (genesis_config, _mint_keypair) = create_genesis_config(0);
         let mut root_bank = Bank::new_for_tests(&genesis_config);
 
