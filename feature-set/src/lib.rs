@@ -1126,14 +1126,6 @@ pub mod enforce_fixed_fec_set {
     solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
 }
 
-pub mod enforce_fixed_fec_set {
-    solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
-}
-
-pub mod raise_block_limits_to_100m {
-    solana_pubkey::declare_id!("P1BCUMpAC7V2GRBRiJCNUgpMyWZhoqt3LKo712ePqsz");
-}
-
 pub mod replace_spl_token_with_p_token {
     use super::Pubkey;
 
