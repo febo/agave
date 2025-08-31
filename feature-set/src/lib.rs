@@ -1380,7 +1380,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (raise_account_cu_limit::id(), "SIMD-0306: Raise account CU limit to 40% max"),
         (raise_cpi_nesting_limit_to_8::id(), "SIMD-0296: Raise CPI nesting limit from 4 to 8"),
         (enforce_fixed_fec_set::id(), "SIMD-0317: Enforce 32 data + 32 coding shreds"),
-        (migrate_ptoken_to_spl_token_program::id(), "SIMD-0266: Efficient Token program"),
+        (replace_spl_token_with_p_token::id(), "SIMD-0266: Efficient Token program"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
