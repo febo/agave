@@ -2048,7 +2048,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
             "SIMD-0317: Enforce 32 data + 32 coding shreds",
         ),
         (
-            migrate_ptoken_to_spl_token_program::id(),
+            replace_spl_token_with_p_token::id(),
             "SIMD-0266: Efficient Token program",
         ),
         /*************** ADD NEW FEATURES HERE ***************/
