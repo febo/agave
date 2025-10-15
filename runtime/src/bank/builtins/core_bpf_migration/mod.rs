@@ -16,7 +16,7 @@ use {
     solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_program_runtime::{
         invoke_context::{EnvironmentConfig, InvokeContext},
-        loaded_programs::{ProgramCacheEntry, ProgramCacheForTxBatch},
+        loaded_programs::ProgramCacheForTxBatch,
         sysvar_cache::SysvarCache,
     },
     solana_pubkey::Pubkey,
@@ -24,10 +24,7 @@ use {
     solana_svm_callback::InvokeContextCallback,
     solana_transaction_context::TransactionContext,
     source_buffer::SourceBuffer,
-    std::{
-        cmp::Ordering,
-        sync::{atomic::Ordering::Relaxed, Arc},
-    },
+    std::{cmp::Ordering, sync::atomic::Ordering::Relaxed},
     target_builtin::TargetBuiltin,
     target_core_bpf::TargetCoreBpf,
 };
@@ -132,7 +129,6 @@ impl Bank {
         &self,
         program_id: &Pubkey,
         programdata: &[u8],
-        without_delay_visibility: bool,
     ) -> Result<(), InstructionError> {
         let data_len = programdata.len();
         let progradata_metadata_size = UpgradeableLoaderState::size_of_programdata_metadata();
@@ -213,25 +209,6 @@ impl Bank {
                 self.slot,
             )?;
             load_program_metrics.submit_datapoint(&mut dummy_invoke_context.timings);
-
-            if without_delay_visibility {
-                // Update the program cache with a new entry to avoid a `DelayVisibility`
-                // error by setting the deployment slot to be equal to effective slot. It
-                // is safe to do this here since we are at a block boundary, not inside
-                // a transaction.
-                let updated = ProgramCacheEntry::new(
-                    &bpf_loader_upgradeable::id(),
-                    program_runtime_environment,
-                    self.slot,
-                    self.slot,
-                    elf,
-                    data_len,
-                    &mut load_program_metrics,
-                )
-                .map_err(|_err| InstructionError::ProgramEnvironmentSetupFailure)?;
-
-                program_cache_for_tx_batch.store_modified_entry(*program_id, Arc::new(updated));
-            }
         }
 
         // Update the program cache by merging with `programs_modified`, which
@@ -290,7 +267,6 @@ impl Bank {
         self.directly_invoke_loader_v3_deploy(
             &target.program_address,
             new_target_program_data_account.data(),
-            false,
         )?;
 
         // Calculate the lamports to burn.
@@ -373,7 +349,6 @@ impl Bank {
         self.directly_invoke_loader_v3_deploy(
             &target.program_address,
             new_target_program_data_account.data(),
-            false,
         )?;
 
         // Calculate the lamports to burn.
@@ -459,7 +434,6 @@ impl Bank {
         self.directly_invoke_loader_v3_deploy(
             &target.program_address,
             new_target_program_data_account.data(),
-            true,
         )?;
 
         // Calculate the lamports to burn.
@@ -678,12 +652,7 @@ pub(crate) mod tests {
         // * The source buffer account is cleared.
         // * The bank's builtin IDs do not contain the target program address.
         // * The cache contains the target program, and the entry is updated.
-        pub(crate) fn run_program_checks(
-            &self,
-            bank: &Bank,
-            migration_or_upgrade_slot: Slot,
-            expected_effective_slot: Slot,
-        ) {
+        pub(crate) fn run_program_checks(&self, bank: &Bank, migration_or_upgrade_slot: Slot) {
             // Verify the source buffer account has been cleared.
             assert!(bank.get_account(&self.source_buffer_address).is_none());
 
@@ -756,7 +725,7 @@ pub(crate) mod tests {
             // The target program entry should be updated.
             assert_eq!(target_entry.account_size, program_data_account.data().len());
             assert_eq!(target_entry.deployment_slot, migration_or_upgrade_slot);
-            assert_eq!(target_entry.effective_slot, expected_effective_slot);
+            assert_eq!(target_entry.effective_slot, migration_or_upgrade_slot + 1);
 
             // The target program entry should be a BPF program.
             assert_matches!(target_entry.program, ProgramCacheEntryType::Loaded(..));
@@ -824,7 +793,7 @@ pub(crate) mod tests {
             .unwrap();
 
         // Run the post-migration program checks.
-        test_context.run_program_checks(&bank, migration_slot, migration_slot + 1);
+        test_context.run_program_checks(&bank, migration_slot);
 
         // Check the bank's capitalization.
         assert_eq!(
@@ -889,7 +858,7 @@ pub(crate) mod tests {
             .unwrap();
 
         // Run the post-migration program checks.
-        test_context.run_program_checks(&bank, migration_slot, migration_slot + 1);
+        test_context.run_program_checks(&bank, migration_slot);
 
         // Check the bank's capitalization.
         assert_eq!(
@@ -1181,7 +1150,7 @@ pub(crate) mod tests {
         .unwrap();
 
         // Run the post-upgrade program checks.
-        test_context.run_program_checks(&bank, upgrade_slot, upgrade_slot + 1);
+        test_context.run_program_checks(&bank, upgrade_slot);
 
         // Check the bank's capitalization.
         assert_eq!(bank.capitalization(), expected_post_upgrade_capitalization);
@@ -1307,7 +1276,6 @@ pub(crate) mod tests {
         mint_keypair: &Keypair,
         slots_per_epoch: u64,
         cpi_program_id: &Pubkey,
-        without_delay_visibility: bool,
     ) {
         let (bank, bank_forks) = root_bank.wrap_with_bank_forks_for_tests();
 
@@ -1343,12 +1311,9 @@ pub(crate) mod tests {
             first_slot_in_next_epoch,
         );
 
-        // Determine the expected effective slot of the migrated program.
-        let expected_effective_slot = migration_slot + if without_delay_visibility { 0 } else { 1 };
-
         // Run the post-migration program checks.
         assert!(bank.feature_set.is_active(feature_id));
-        test_context.run_program_checks(&bank, migration_slot, expected_effective_slot);
+        test_context.run_program_checks(&bank, migration_slot);
 
         // Advance one slot so that the new BPF loader v3 program becomes
         // effective in the program cache.
@@ -1395,7 +1360,7 @@ pub(crate) mod tests {
 
         // Run the post-migration program checks again.
         assert!(bank.feature_set.is_active(feature_id));
-        test_context.run_program_checks(&bank, migration_slot, expected_effective_slot);
+        test_context.run_program_checks(&bank, migration_slot);
 
         // Again, successfully invoke the new BPF loader v3 program.
         bank.process_transaction(&Transaction::new(
@@ -1481,7 +1446,6 @@ pub(crate) mod tests {
             &mint_keypair,
             slots_per_epoch,
             &cpi_program_id,
-            false,
         );
     }
 
@@ -1848,7 +1812,7 @@ pub(crate) mod tests {
         .unwrap();
 
         // Run the post-upgrade program checks.
-        test_context.run_program_checks(&bank, upgrade_slot, upgrade_slot);
+        test_context.run_program_checks(&bank, upgrade_slot);
 
         // Check the bank's capitalization.
         assert_eq!(bank.capitalization(), expected_post_upgrade_capitalization);
@@ -1997,7 +1961,6 @@ pub(crate) mod tests {
             &mint_keypair,
             slots_per_epoch,
             &cpi_program_id,
-            true,
         );
     }
 
@@ -2131,6 +2094,6 @@ pub(crate) mod tests {
         bank.compute_and_apply_features_after_snapshot_restore();
 
         // Run the post-upgrade program checks.
-        test_context.run_program_checks(&bank, upgrade_slot, upgrade_slot);
+        test_context.run_program_checks(&bank, upgrade_slot);
     }
 }
