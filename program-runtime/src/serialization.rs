@@ -519,6 +519,10 @@ fn serialize_parameters_aligned(
     + instruction_data.len()
     + size_of::<Pubkey>(); // program id;
 
+    // reserve space for account pointer array
+    let account_pointers_offset = (size as *const u8).align_offset(BPF_ALIGN_OF_U128);
+    size += account_pointers_offset + accounts.len() * size_of::<u64>();
+
     let mut s = Serializer::new(
         size,
         MM_INPUT_START,
@@ -567,6 +571,11 @@ fn serialize_parameters_aligned(
     s.write::<u64>((instruction_data.len() as u64).to_le());
     let instruction_data_offset = s.write_all(instruction_data);
     s.write_all(program_id.as_ref());
+    s.fill_write(account_pointers_offset, 0)
+        .map_err(|_| InstructionError::InvalidArgument)?;
+    for entry in accounts_metadata.iter() {
+        s.write::<u64>(entry.vm_data_addr.to_le());
+    }
 
     let (mem, regions) = s.finish();
     Ok((
