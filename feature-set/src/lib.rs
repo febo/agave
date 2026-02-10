@@ -173,6 +173,8 @@ impl FeatureSet {
             custom_commission_collector: false, // Feature disabled for now.
             enable_bls12_381_syscall: self.is_active(&enable_bls12_381_syscall::id()),
             block_revenue_sharing: false, // Hard-coded as disabled for now. Not a fully-implemented feature yet.
+            direct_account_pointers_in_program_input: self
+                .is_active(&direct_account_pointers_in_program_input::id()),
         }
     }
 }
@@ -1296,6 +1298,10 @@ pub mod block_revenue_sharing {
     solana_pubkey::declare_id!("HqUXZzYaxpbjHRCZHn8GLDCSecyCe2A7JD3An6asGdw4");
 }
 
+pub mod direct_account_pointers_in_program_input {
+    solana_pubkey::declare_id!("ptrXWLkSDMZZmZN8GAT6W5yW4EvYByfw6cRRHbXwQNS");
+}
+
 pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::new(|| {
     [
         (secp256k1_program_enabled::id(), "secp256k1 program"),
@@ -2306,6 +2312,10 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (
             limit_instruction_accounts::id(),
             "SIMD-406: Maximum instruction accounts",
+        ),
+        (
+            direct_account_pointers_in_program_input::id(),
+            "SIMD-0449: Direct Account Pointers in Program Input",
         ),
         /*************** ADD NEW FEATURES HERE ***************/
     ]

@@ -223,6 +223,7 @@ pub fn serialize_parameters(
     instruction_context: &InstructionContext,
     stricter_abi_and_runtime_constraints: bool,
     account_data_direct_mapping: bool,
+    direct_account_pointers_in_program_input: bool,
 ) -> Result<
     (
         AlignedMemory<HOST_ALIGN>,
@@ -276,6 +277,8 @@ pub fn serialize_parameters(
             &program_id,
             stricter_abi_and_runtime_constraints,
             account_data_direct_mapping,
+            // SIMD-0449: only available on ABIv1
+            direct_account_pointers_in_program_input,
         )
     }
 }
@@ -469,6 +472,7 @@ fn serialize_parameters_aligned(
     program_id: &Pubkey,
     stricter_abi_and_runtime_constraints: bool,
     account_data_direct_mapping: bool,
+    direct_account_pointers_program_input: bool,
 ) -> Result<
     (
         AlignedMemory<HOST_ALIGN>,
@@ -509,6 +513,15 @@ fn serialize_parameters_aligned(
     size += size_of::<u64>() // data len
     + instruction_data.len()
     + size_of::<Pubkey>(); // program id;
+
+    // reserve space for account pointer array
+    let account_pointers_offset = if direct_account_pointers_program_input {
+        let offset = (size as *const u8).align_offset(BPF_ALIGN_OF_U128);
+        size += offset + accounts.len() * size_of::<u64>();
+        offset
+    } else {
+        0
+    };
 
     let mut s = Serializer::new(
         size,
@@ -554,6 +567,15 @@ fn serialize_parameters_aligned(
     s.write::<u64>((instruction_data.len() as u64).to_le());
     let instruction_data_offset = s.write_all(instruction_data);
     s.write_all(program_id.as_ref());
+
+    // Write account pointer array if requested
+    if direct_account_pointers_program_input {
+        s.fill_write(account_pointers_offset, 0)
+            .map_err(|_| InstructionError::InvalidArgument)?;
+        for entry in accounts_metadata.iter() {
+            s.write::<u64>(entry.vm_data_addr.to_le());
+        }
+    }
 
     let (mem, regions) = s.finish();
     Ok((
@@ -677,6 +699,7 @@ mod tests {
             rc::Rc,
             slice::{self, from_raw_parts, from_raw_parts_mut},
         },
+        test_case::test_case,
     };
 
     fn deduplicated_instruction_accounts(
@@ -696,8 +719,11 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_serialize_parameters_with_many_accounts() {
+    #[test_case(false; "direct_account_pointers_in_program_input disabled")]
+    #[test_case(true; "direct_account_pointers_in_program_input enabled")]
+    fn test_serialize_parameters_with_many_accounts(
+        direct_account_pointers_in_program_input: bool,
+    ) {
         struct TestCase {
             num_ix_accounts: usize,
             append_dup_account: bool,
@@ -804,6 +830,7 @@ mod tests {
                     &instruction_context,
                     stricter_abi_and_runtime_constraints,
                     false, // account_data_direct_mapping
+                    direct_account_pointers_in_program_input,
                 );
                 assert_eq!(
                     serialization_result.as_ref().err(),
@@ -854,8 +881,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_serialize_parameters() {
+    #[test_case(false; "direct_account_pointers_in_program_input disabled")]
+    #[test_case(true; "direct_account_pointers_in_program_input enabled")]
+    fn test_serialize_parameters(direct_account_pointers_in_program_input: bool) {
         for stricter_abi_and_runtime_constraints in [false, true] {
             let program_id = solana_pubkey::new_rand();
             let transaction_accounts = vec![
@@ -965,6 +993,7 @@ mod tests {
                     &instruction_context,
                     stricter_abi_and_runtime_constraints,
                     false, // account_data_direct_mapping
+                    direct_account_pointers_in_program_input,
                 )
                 .unwrap();
 
@@ -1063,6 +1092,7 @@ mod tests {
                     &instruction_context,
                     stricter_abi_and_runtime_constraints,
                     false, // account_data_direct_mapping
+                    direct_account_pointers_in_program_input,
                 )
                 .unwrap();
             let mut serialized_regions = concat_regions(&regions);
@@ -1121,8 +1151,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_serialize_parameters_mask_out_rent_epoch_in_vm_serialization() {
+    #[test_case(false; "direct_account_pointers_in_program_input disabled")]
+    #[test_case(true; "direct_account_pointers_in_program_input enabled")]
+    fn test_serialize_parameters_mask_out_rent_epoch_in_vm_serialization(
+        direct_account_pointers_in_program_input: bool,
+    ) {
         let transaction_accounts = vec![
             (
                 solana_pubkey::new_rand(),
@@ -1224,6 +1257,7 @@ mod tests {
                 &instruction_context,
                 true,
                 false, // account_data_direct_mapping
+                direct_account_pointers_in_program_input,
             )
             .unwrap();
 
@@ -1256,6 +1290,7 @@ mod tests {
                 &instruction_context,
                 true,
                 false, // account_data_direct_mapping
+                direct_account_pointers_in_program_input,
             )
             .unwrap();
         let mut serialized_regions = concat_regions(&regions);
