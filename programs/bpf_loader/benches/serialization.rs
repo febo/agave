@@ -176,7 +176,7 @@ fn bench_serialize_aligned_copy_account_data(c: &mut Criterion) {
                 &instruction_context,
                 false, // virtual_address_space_adjustments
                 false, // account_data_direct_mapping
-                true,  // direct_account_pointers_in_program_input
+                false, // direct_account_pointers_in_program_input
             )
             .unwrap();
         });
