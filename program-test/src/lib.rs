@@ -141,7 +141,7 @@ pub fn invoke_builtin_function(
             &instruction_context,
             false, // There is no VM so virtual_address_space_adjustments can not be implemented here
             false, // There is no VM so account_data_direct_mapping can not be implemented here
-            false, // There is no VM so direct_account_pointers_in_program_input can not be implemented here
+            true,  // There is no VM but we still want direct_account_pointers_in_program_input
         )?;
 
     // Deserialize data back into instruction params
