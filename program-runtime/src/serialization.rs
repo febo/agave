@@ -573,6 +573,8 @@ fn serialize_parameters_for_abiv1(
     s.write_all(program_id.as_ref());
 
     if let Some(offset) = account_pointers_offset {
+        // Add padding before the account pointer array to reach 8-byte alignment
+        // (BPF_ALIGN_OF_U128).
         s.fill_write(offset, 0)
             .map_err(|_| InstructionError::InvalidArgument)?;
         for entry in accounts_metadata.iter() {
