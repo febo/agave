@@ -8,6 +8,7 @@ use {
         serialization::{create_memory_region_of_account, modify_memory_region_of_account},
     },
     solana_account_info::AccountInfo,
+    solana_account_view::{AccountView, RuntimeAccount},
     solana_instruction::{AccountMeta, Instruction, error::InstructionError},
     solana_loader_v3_interface::instruction as bpf_loader_upgradeable,
     solana_program_entrypoint::MAX_PERMITTED_DATA_INCREASE,
@@ -520,6 +521,89 @@ impl<'a> CallerAccount<'a> {
             ref_to_len_in_vm,
         })
     }
+
+    // Create a CallerAccount given an `AccountView`.
+    fn from_account_view(
+        invoke_context: &InvokeContext,
+        memory_mapping: &MemoryMapping,
+        check_aligned: bool,
+        _vm_addr: u64,
+        account_view: &AccountView,
+        account_metadata: &crate::memory_context::SerializedAccountMetadata,
+    ) -> Result<CallerAccount<'a>, Error> {
+        use crate::memory::translate_type_mut_for_cpi;
+
+        let syscall_parameter_address_restrictions = invoke_context
+            .get_feature_set()
+            .syscall_parameter_address_restrictions;
+        let virtual_address_space_adjustments = invoke_context
+            .get_feature_set()
+            .virtual_address_space_adjustments;
+        let account_data_direct_mapping =
+            invoke_context.get_feature_set().account_data_direct_mapping;
+
+        // The account data is serialized after the metadata, so at the end of the
+        // `RuntimeAccount` struct.
+        let data_addr = (account_view.account_ptr() as *const RuntimeAccount as u64)
+            .saturating_add(std::mem::size_of::<RuntimeAccount>() as u64);
+
+        if syscall_parameter_address_restrictions {
+            check_account_info_pointer(
+                invoke_context,
+                account_view.account_ptr() as *const RuntimeAccount as u64,
+                account_metadata.vm_addr,
+                "key",
+            )?;
+
+            check_account_info_pointer(
+                invoke_context,
+                data_addr,
+                account_metadata.vm_data_addr,
+                "owner",
+            )?;
+        }
+
+        let runtime_account = translate_type_mut_for_cpi::<RuntimeAccount>(
+            memory_mapping,
+            account_view.account_ptr() as *const RuntimeAccount as u64,
+            false,
+        )?;
+
+        let lamports = &mut runtime_account.lamports;
+
+        let owner = &mut runtime_account.owner;
+
+        if !syscall_parameter_address_restrictions {
+            // Moved to translate_accounts_common() via feature gate.
+            invoke_context.compute_meter.consume_checked(
+                (account_view.data_len() as u64)
+                    .checked_div(invoke_context.get_execution_cost().cpi_bytes_per_unit)
+                    .unwrap_or(u64::MAX),
+            )?;
+        }
+
+        let serialized_data = unsafe {
+            CallerAccount::get_serialized_data(
+                memory_mapping,
+                check_aligned,
+                data_addr,
+                account_metadata.original_data_len,
+                runtime_account.data_len as usize,
+                syscall_parameter_address_restrictions,
+                virtual_address_space_adjustments,
+                account_data_direct_mapping,
+            )?
+        };
+
+        Ok(CallerAccount {
+            lamports,
+            owner,
+            original_data_len: account_metadata.original_data_len,
+            serialized_data,
+            vm_data_addr: data_addr,
+            ref_to_len_in_vm: &mut runtime_account.data_len,
+        })
+    }
 }
 
 /// Implemented by language specific data structure translators
@@ -764,6 +848,34 @@ pub fn translate_accounts_c<'a>(
                 memory_mapping,
                 check_aligned,
                 CallerAccount::from_sol_account_info,
+            )
+        },
+    )?
+}
+
+pub fn translate_account_views<'a>(
+    account_views_addr: u64,
+    account_views_len: u64,
+    invoke_context: &InvokeContext,
+) -> Result<Vec<TranslatedAccount<'a>>, Error> {
+    let check_aligned = invoke_context.get_check_aligned();
+    let memory_mapping = invoke_context.memory_contexts.memory_mapping()?;
+    translate_account_infos(
+        account_views_addr,
+        account_views_len,
+        |account_view: &AccountView| account_view.address() as *const Pubkey as u64,
+        invoke_context,
+        memory_mapping,
+        check_aligned,
+        |account_views, accounts_view_keys| {
+            translate_accounts_common(
+                &accounts_view_keys,
+                account_views,
+                account_views_addr,
+                invoke_context,
+                memory_mapping,
+                check_aligned,
+                CallerAccount::from_account_view,
             )
         },
     )?
@@ -1616,6 +1728,92 @@ mod tests {
         }
     }
 
+    struct MockAccountView<'a> {
+        key: Pubkey,
+        account: &'a AccountSharedData,
+    }
+
+    impl<'a> MockAccountView<'a> {
+        fn new(key: Pubkey, account: &'a AccountSharedData) -> Self {
+            Self { key, account }
+        }
+
+        fn into_regions(
+            self,
+            account_views_addr: u64,
+        ) -> (
+            Vec<u64>,
+            Vec<AccountView>,
+            Vec<MemoryRegion>,
+            SerializedAccountMetadata,
+        ) {
+            let original_data_len = self.account.data().len();
+            let runtime_account_size = mem::size_of::<RuntimeAccount>();
+            let runtime_memory_size = runtime_account_size + original_data_len;
+            let mut runtime_memory =
+                vec![0u64; runtime_memory_size.div_ceil(mem::size_of::<u64>())];
+            let runtime_account_ptr = runtime_memory.as_mut_ptr().cast::<RuntimeAccount>();
+            unsafe {
+                ptr::write(
+                    runtime_account_ptr,
+                    RuntimeAccount {
+                        borrow_state: u8::MAX,
+                        is_signer: 0,
+                        is_writable: 1,
+                        executable: self.account.executable() as u8,
+                        padding: [0; 4],
+                        address: self.key,
+                        owner: *self.account.owner(),
+                        lamports: self.account.lamports(),
+                        data_len: original_data_len as u64,
+                    },
+                );
+                ptr::copy_nonoverlapping(
+                    self.account.data().as_ptr(),
+                    runtime_account_ptr.cast::<u8>().add(runtime_account_size),
+                    original_data_len,
+                );
+            }
+
+            let runtime_account_addr = runtime_account_ptr as u64;
+            let data_addr = runtime_account_addr + runtime_account_size as u64;
+            let runtime_memory_slice = unsafe {
+                slice::from_raw_parts_mut(runtime_account_ptr.cast::<u8>(), runtime_memory_size)
+            };
+            let runtime_account_region =
+                MemoryRegion::new(&raw mut runtime_memory_slice[..], runtime_account_addr);
+
+            let mut account_views =
+                vec![unsafe { AccountView::new_unchecked(runtime_account_ptr) }];
+            let account_views_size = mem::size_of_val(account_views.as_slice());
+            let account_views_memory = unsafe {
+                slice::from_raw_parts_mut(
+                    account_views.as_mut_ptr().cast::<u8>(),
+                    account_views_size,
+                )
+            };
+            let account_views_region =
+                MemoryRegion::new(&raw mut account_views_memory[..], account_views_addr);
+
+            let account_metadata = SerializedAccountMetadata {
+                vm_addr: runtime_account_addr,
+                original_data_len,
+                vm_key_addr: runtime_account_addr + mem::offset_of!(RuntimeAccount, address) as u64,
+                vm_lamports_addr: runtime_account_addr
+                    + mem::offset_of!(RuntimeAccount, lamports) as u64,
+                vm_owner_addr: runtime_account_addr + mem::offset_of!(RuntimeAccount, owner) as u64,
+                vm_data_addr: data_addr,
+            };
+
+            (
+                runtime_memory,
+                account_views,
+                vec![account_views_region, runtime_account_region],
+                account_metadata,
+            )
+        }
+    }
+
     struct MockInstruction {
         program_id: Pubkey,
         accounts: Vec<AccountMeta>,
@@ -1927,6 +2125,62 @@ mod tests {
         let caller_account = &accounts[0].caller_account;
         assert_eq!(caller_account.serialized_data, account.data());
         assert_eq!(caller_account.original_data_len, original_data_len);
+    }
+
+    #[test]
+    fn test_translate_account_views() {
+        let transaction_accounts =
+            transaction_with_one_writable_instruction_account(b"foobar".to_vec());
+        let account = transaction_accounts[1].1.clone();
+        let key = transaction_accounts[1].0;
+        let original_data_len = account.data().len();
+        let account_views_addr = solana_sbpf::ebpf::MM_HEAP_START;
+        let (_runtime_memory, _account_views, regions, account_metadata) =
+            MockAccountView::new(key, &account).into_regions(account_views_addr);
+
+        let config = Config {
+            aligned_memory_mapping: false,
+            ..Config::default()
+        };
+        let memory_mapping =
+            unsafe { MemoryMapping::new(regions, &config, SBPFVersion::V3).unwrap() };
+
+        mock_invoke_context!(
+            invoke_context,
+            transaction_context,
+            b"instruction data",
+            transaction_accounts,
+            0,
+            &[1, 1]
+        );
+        invoke_context
+            .memory_contexts
+            .set_memory_context_abi_v1(MemoryContext::new(
+                BpfAllocator::new(solana_program_entrypoint::HEAP_LENGTH as u64),
+                vec![account_metadata],
+                memory_mapping,
+            ))
+            .unwrap();
+        invoke_context
+            .transaction_context
+            .configure_next_cpi_for_tests(
+                0,
+                vec![
+                    InstructionAccount::new(1, false, true),
+                    InstructionAccount::new(1, false, true),
+                ],
+                vec![],
+            )
+            .unwrap();
+
+        let accounts = translate_account_views(account_views_addr, 1, &invoke_context).unwrap();
+        assert_eq!(accounts.len(), 1);
+        let caller_account = &accounts[0].caller_account;
+        assert_eq!(*caller_account.lamports, account.lamports());
+        assert_eq!(caller_account.owner, account.owner());
+        assert_eq!(caller_account.serialized_data, account.data());
+        assert_eq!(caller_account.original_data_len, original_data_len);
+        assert_eq!(*caller_account.ref_to_len_in_vm as usize, original_data_len);
     }
 
     #[test]

@@ -7006,6 +7006,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-account-view"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc141b940560430425ebaadb7645496c45f6a10fad9911d719bd03eab7f4d422"
+dependencies = [
+ "solana-address 2.6.1",
+ "solana-program-error",
+]
+
+[[package]]
 name = "solana-accounts-cluster-bench"
 version = "4.3.0-alpha.2"
 dependencies = [
@@ -9659,6 +9669,7 @@ dependencies = [
  "serde",
  "solana-account 4.3.1",
  "solana-account-info",
+ "solana-account-view",
  "solana-clock",
  "solana-ed25519-program",
  "solana-epoch-rewards",
