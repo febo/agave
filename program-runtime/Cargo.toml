@@ -41,6 +41,7 @@ rand = { workspace = true }
 serde = { workspace = true }
 solana-account = { workspace = true }
 solana-account-info = { workspace = true }
+solana-account-view = { workspace = true }
 solana-clock = { workspace = true }
 solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
