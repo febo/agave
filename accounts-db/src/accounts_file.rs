@@ -230,8 +230,11 @@ impl AccountsFile {
         &'a self,
         reader: &mut impl FileBufRead<'a>,
     ) -> io::Result<()> {
-        let (file, read_limit) = self.account_data_file();
-        reader.set_file(file, read_limit)
+        if let Some((file, read_limit)) = self.account_data_file() {
+            reader.set_file(file, read_limit)
+        } else {
+            Ok(())
+        }
     }
 
     /// Scans the file already activated on the reader, preserving archive read-ahead and I/O mode.
@@ -314,40 +317,40 @@ impl AccountsFile {
         }
     }
 
-    /// Returns the file holding the account data and its length; a split file without a data file
-    /// returns its meta file with length 0.
-    fn account_data_file(&self) -> (&File, FileSize) {
+    /// Returns the file holding the account data and its length.
+    fn account_data_file(&self) -> Option<(&File, FileSize)> {
         match self {
-            Self::AppendVec(av) => (av.file(), av.len() as FileSize),
-            Self::Split(split) => match split.data_file() {
-                Some(data_file) => (data_file, split.data_len()),
-                None => (split.meta_file(), 0),
-            },
+            Self::AppendVec(av) => Some((av.file(), av.len() as FileSize)),
+            Self::Split(split) => split
+                .data_file()
+                .map(|data_file| (data_file, split.data_len())),
         }
     }
 
     /// Returns a file handle suitable for archive-style reads. With
     /// `use_direct_io = true` a fresh fd is opened with `O_DIRECT`; otherwise
     /// the `AccountsFile`'s existing fd is borrowed, saving one fd per storage.
-    pub fn open_file_for_archive(&self, use_direct_io: bool) -> io::Result<OpenFileForArchive<'_>> {
-        let (data_file, read_limit) = self.account_data_file();
+    /// Returns `None` for a split file with no external account data file.
+    pub fn open_file_for_archive(
+        &self,
+        use_direct_io: bool,
+    ) -> io::Result<Option<OpenFileForArchive<'_>>> {
+        let Some((data_file, read_limit)) = self.account_data_file() else {
+            return Ok(None);
+        };
         let file = if use_direct_io {
             let path = match self {
                 Self::AppendVec(av) => av.path(),
-                Self::Split(split) => split.data_path().unwrap_or_else(|| {
-                    // We're opening a file here to use with AccountStorageReader for archiving
-                    // snapshots.  However, this SplitFile doesn't have a data file, so there's
-                    // nothing to actually read...  Since we need to return something, using
-                    // the meta file here is fine; the AccountStorageReader will never use it.
-                    // Ideal? No.  Safe? Yes.
-                    split.meta_path()
-                }),
+                Self::Split(split) => {
+                    // SAFETY: A data file implies that its path is present as well.
+                    split.data_path().unwrap()
+                }
             };
             ArchiveFile::Owned(open_for_reading(path, true)?)
         } else {
             ArchiveFile::Borrowed(data_file)
         };
-        Ok(OpenFileForArchive { file, read_limit })
+        Ok(Some(OpenFileForArchive { file, read_limit }))
     }
 }
 
