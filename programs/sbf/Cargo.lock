@@ -7966,6 +7966,7 @@ dependencies = [
  "agave-feature-set",
  "agave-math-utils",
  "agave-snapshots",
+ "agave-transaction-view",
  "agave-votor-messages",
  "base64 0.23.1",
  "bs58",
